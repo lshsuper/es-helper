@@ -1,0 +1,90 @@
+{
+  "settings": {
+    "number_of_shards": "1",
+    "number_of_replicas": "0"
+  },
+  "mappings": {
+    "words": {
+      "dynamic": false,
+      "properties": {
+        "ArtistID": {
+          "type": "long"
+        },
+        "ThemesID": {
+          "type": "long"
+        },
+        "CreateTime": {
+          "type": "date"
+        },
+        "ArtistName": {
+          "analyzer": "ik_max_word",
+          "type": "text",
+          "fields": {
+            "ArtistNameTerm": {
+              "type": "keyword"
+            },
+            "ArtistNameSuggest": {
+              "type": "completion",
+              "analyzer": "ik_max_word"
+            }
+          }
+        },
+        "ClassName": {
+          "type": "keyword"
+        },
+        "OpusClassID": {
+          "type": "long"
+        },
+        "UpWord": {
+          "analyzer": "ik_max_word",
+          "type": "text",
+          "fields": {
+            "UpWordSuggest": {
+              "type": "completion",
+              "analyzer": "ik_max_word"
+            }
+          }
+        },
+        "ID": {
+          "type": "long"
+        },
+        "ThemeName": {
+          "analyzer": "ik_max_word",
+          "type": "text",
+          "fields": {
+            "ThemeNameTerm": {
+              "type": "keyword"
+            },
+            "ThemeNameSuggest": {
+              "type": "completion",
+              "analyzer": "ik_max_word"
+            }
+          }
+        },
+        "OpusName": {
+          "analyzer": "ik_max_word",
+          "type": "text",
+          "fields": {
+            "OpusNameTerm": {
+              "type": "keyword"
+            },
+            "OpusNameSuggest": {
+              "type": "completion",
+              "analyzer": "ik_max_word"
+            }
+          }
+        },
+        "NextWord": {
+          "analyzer": "ik_max_word",
+          "type": "text",
+          "fields": {
+            "NextWordSuggest": {
+              "type": "completion",
+              "analyzer": "ik_max_word"
+            }
+          }
+        }
+      }
+    }
+  }
+}
