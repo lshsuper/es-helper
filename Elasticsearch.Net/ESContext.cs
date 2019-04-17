@@ -17,82 +17,18 @@ using static System.Net.Mime.MediaTypeNames;
 namespace Common.Elasticsearch.Net
 {
     /// <summary>
-    /// ES Context
-    /// Sql相关接口需要安装【elasticsearch-sql-x】插件才可以使用
+    /// 说明：
+    ///1.es扩展接口类（自定义接口格式）
+    ///2.均为单索引操作，主要为简化操作流程，复杂操作需另外实现
+    ///3.Sql相关接口需要安装【elasticsearch-sql-x】插件才可以使用
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class ESContext<T> where T : class, new()
+    public class ESContext<T> : ESContextBase<T> where T : class, new()
     {
-        public static readonly ElasticClient _es;   //Client
-        static ESContext()
-        {
-            ConnectionSettings setting = new ConnectionSettings(new Uri(Constant.ElasticSearchConn));
-            _es = new ElasticClient(setting);
-        }
-
         #region Context-- Util
 
         #region Util-- Document CURD
-        /// <summary>
-        /// 单一添加一行数据(没有就创建,有就修改覆盖)
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="model"></param>
-        /// <param name="indexName"></param>
-        /// <param name="typeName"></param>
-        /// <param name="id"></param>
-        /// <returns></returns>
-        public static bool Set(T model, string indexName, string typeName, string id)
-        {
 
-            var res = new IndexRequest<T>(indexName, typeName, id);
-            res.Document = model;
-            IndexResponse result = (IndexResponse)_es.Index<T>(res);
-            return result.IsValid;
-
-
-        }
-        /// <summary>
-        /// 批量添加(没有就创建,有就修改覆盖)
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="model"></param>
-        /// <param name="indexName"></param>
-        /// <param name="typeName"></param>
-        /// <returns></returns>
-        public static bool SetMuilt(IEnumerable<T> model, string indexName, string typeName)
-        {
-
-            BulkResponse result = (BulkResponse)_es.IndexMany<T>(model, indexName, typeName);
-            return result.IsValid;
-
-
-        }
-
-        /// <summary>
-        /// 根据实体映射，初始化Index
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="model"></param>
-        /// <param name="indexName"></param>
-        /// <param name="typeName"></param>
-        /// <param name="id"></param>
-        /// <returns></returns>
-        public static bool AddIndex(T model, string indexName, string typeName, string id)
-        {
-
-            if (!IndexExist(indexName))
-            {
-                ESIndexMap.InitializeIndexMap<T>(_es, indexName);
-            }
-
-            var res = new IndexRequest<T>(indexName, typeName, id);
-            res.Document = model;
-            IndexResponse result = (IndexResponse)_es.Index<T>(res);
-            return result.IsValid;
-
-
-        }
         /// <summary>
         /// 查询列表（by page）
         /// </summary>
@@ -101,25 +37,29 @@ namespace Common.Elasticsearch.Net
         public static ESPageInfo<T> Query(ESSearchOption option)
         {
 
-            ISearchRequest searchRequest = new SearchRequest<T>(option.IndexName, option.TypeName);
+            ISearchRequest searchRequest = new SearchRequest<T>(Indices.Parse(option.IndexName), Types.Parse(option.TypeName));
             var data = new ESPageInfo<T>();
-            var queryCondations = BuildQueryContainer(option.Where);
+            var queryCondations = BuildQueryContainer(option.Where, option.Analyzer);
             var shouldQuerys = queryCondations.Should;
             var mustQuerys = queryCondations.Must;
             var mustNot = queryCondations.MustNot;
-            #region 多条件模糊匹配
+
+            #region +多条件模糊匹配
             searchRequest.Query = new BoolQuery()
             {
                 Should = shouldQuerys,
                 Must = mustQuerys,
-                MustNot = mustNot
+                MustNot = mustNot,
+
             };
+
             if (option.ESHighLightConfig != null)
             {
                 searchRequest.Highlight = BuildHightLight(option.Where.Select(o => o.Key).ToList(), option.ESHighLightConfig);
             }
             #endregion
-            #region 多字段排序
+
+            #region +多字段排序
             if (option.OrderDic != null)
             {
                 List<ISort> orderFileds = new List<ISort>();
@@ -135,9 +75,11 @@ namespace Common.Elasticsearch.Net
                 searchRequest.Sort = orderFileds;
             }
             #endregion
+
+            #region +组装结果集
             searchRequest.From = (option.PageIndex - 1) * option.PageSize;
             searchRequest.Size = option.PageSize;
-            var result = _es.Search<T>(searchRequest);
+            var result = GetInstance.Search<T>(searchRequest);
             data.DataCount = Convert.ToInt32(result.Total);
             data.PageIndex = option.PageIndex;
             data.PageSize = option.PageSize;
@@ -146,12 +88,14 @@ namespace Common.Elasticsearch.Net
             if (option.ESHighLightConfig == null)
             {
                 data.DataSource = result.Hits.Select(o =>
-                          new ESModel<T>()
-                          {
-                              UniqueId = o.Id,
-                              Data = o.Source
-                          }).ToList();
-
+                         new ESModel<T>()
+                         {
+                             UniqueId = o.Id,
+                             Data = o.Source,
+                             Score = o.Score,
+                             IndexName = o.Index,
+                             TypeName = o.Type
+                         }).ToList();
             }
             else
             {
@@ -159,28 +103,45 @@ namespace Common.Elasticsearch.Net
                 foreach (var hit in hits)
                 {
                     var currentHightList = hit.Highlights;
-                    var sourceProps = hit.Source.GetType().GetProperties();
-                    foreach (var sourceProp in sourceProps)
+                    if (hit.Source is Dictionary<string, object>)
                     {
-                        KeyValuePair<string, HighlightHit> currentMatch = currentHightList.FirstOrDefault(o => o.Key == sourceProp.Name);
-                        if (currentMatch.Key != null)
+                        Dictionary<string, object> currentSource = hit.Source as Dictionary<string, object>;
+                        List<string> keys = currentSource.Keys.ToList();
+                        foreach (var key in keys)
                         {
-                            sourceProp.SetValue(hit.Source, Convert.ChangeType(currentMatch.Value.Highlights.First(), sourceProp.PropertyType));
+                            KeyValuePair<string, HighlightHit> currentMatch = currentHightList.FirstOrDefault(o => o.Key.ToLower()== key.ToLower());
+                            if (currentMatch.Key != null)
+                            {
+                                
+                                currentSource[key] = currentMatch.Value.Highlights.First();
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var sourceProps = hit.Source.GetType().GetProperties();
+                        foreach (var sourceProp in sourceProps)
+                        {
+                            KeyValuePair<string, HighlightHit> currentMatch = currentHightList.FirstOrDefault(o => o.Key == sourceProp.Name);
+                            if (currentMatch.Key != null)
+                            {
+                                sourceProp.SetValue(hit.Source, Convert.ChangeType(currentMatch.Value.Highlights.First(), sourceProp.PropertyType));
+                            }
                         }
                     }
                     data.DataSource.Add(new ESModel<T>()
                     {
-
                         Data = hit.Source,
-                        UniqueId = hit.Id
+                        UniqueId = hit.Id,
+                        Score = hit.Score,
+                        IndexName = hit.Index,
+                        TypeName = hit.Type
                     });
                 }
             }
+            #endregion
+
             return data;
-
-
-
-
         }
         /// <summary>
         /// 自动补全列表（配合Completion类型的字段进行使用）
@@ -206,7 +167,7 @@ namespace Common.Elasticsearch.Net
                     },
                 });
             }
-            var result = _es.Search<T>(request);
+            var result = GetInstance.Search<T>(request);
             SuggestDictionary<T> suggestDic = result.Suggest;
             foreach (var item in suggestDic)
             {
@@ -231,22 +192,6 @@ namespace Common.Elasticsearch.Net
             return model;
         }
         /// <summary>
-        /// 删除单一文档(by id)
-        /// </summary>
-        /// <param name="indexName"></param>
-        /// <param name="typeName"></param>
-        /// <param name="id"></param>
-        /// <returns></returns>
-        public static bool Delete(string indexName, string typeName, string id)
-        {
-
-            DeleteRequest request = new DeleteRequest(indexName, typeName, id);
-            DeleteResponse response = (DeleteResponse)_es.Delete(request);
-            return response.IsValid;
-
-
-        }
-        /// <summary>
         /// 修改指定的字段(by id)
         /// </summary>
         /// <typeparam name="T"></typeparam>
@@ -263,7 +208,7 @@ namespace Common.Elasticsearch.Net
             {
                 Doc = model
             };
-            var response = _es.Update(request);
+            var response = GetInstance.Update(request);
             return response.IsValid;
 
 
@@ -285,7 +230,7 @@ namespace Common.Elasticsearch.Net
             {
                 Doc = model
             };
-            var response = _es.Update(request);
+            var response = GetInstance.Update(request);
             return response.IsValid;
 
         }
@@ -302,7 +247,7 @@ namespace Common.Elasticsearch.Net
         {
 
 
-            var queryCondations = BuildQueryContainer(option.Where);
+            var queryCondations = BuildQueryContainer(option.Where, option.Analyzer);
             var shouldQuerys = queryCondations.Should;
             var mustQuerys = queryCondations.Must;
             var mustNotQuerys = queryCondations.MustNot;
@@ -329,7 +274,7 @@ namespace Common.Elasticsearch.Net
             }
             request.Query = query;
 
-            var res = _es.UpdateByQuery(request);
+            var res = GetInstance.UpdateByQuery(request);
             return res.Updated > 0;
 
 
@@ -348,7 +293,7 @@ namespace Common.Elasticsearch.Net
 
             var request = new GetRequest<T>(indexName, typeName, id);
             var result = new ESModel<T>();
-            var response = _es.Get<T>(request);
+            var response = GetInstance.Get<T>(request);
             if (response.IsValid)
             {
                 result.UniqueId = response.Id;
@@ -367,7 +312,7 @@ namespace Common.Elasticsearch.Net
         /// <returns></returns>
         public static Dictionary<string, long> Group(string indexName, string typeName, string groupBy, int size = 10)
         {
-            var result = _es.Search<T>(s => s.Index(indexName).Type(typeName)
+            var result = GetInstance.Search<T>(s => s.Index(indexName).Type(typeName)
                             .Aggregations(ag => ag
                                     .Terms($"group_by_{groupBy}", t => t.Field(groupBy).Size(size))//分组
                                 )
@@ -397,7 +342,7 @@ namespace Common.Elasticsearch.Net
         /// <returns></returns>
         public static bool Delete(ESDeleteOption option)
         {
-            var queryCondations = BuildQueryContainer(option.Where);
+            var queryCondations = BuildQueryContainer(option.Where, option.Analyzer);
             var shouldQuerys = queryCondations.Should;
             var mustQuerys = queryCondations.Must;
             var mustNotQuerys = queryCondations.MustNot;
@@ -423,44 +368,10 @@ namespace Common.Elasticsearch.Net
             }
             request.Query = query;
 
-            var res = _es.DeleteByQuery(request);
+            var res = GetInstance.DeleteByQuery(request);
             return res.Deleted > 0;
         }
-        /// <summary>
-        /// 更新（需要自己构建request对象）
-        /// </summary>
-        /// <param name="request"></param>
-        /// <returns></returns>
-        public static bool Update(UpdateByQueryRequest<T> request)
-        {
-            var res = _es.UpdateByQuery(request);
-            return res.Updated > 0;
 
-
-        }
-        /// <summary>
-        /// 删除（需要自己构建request对象）
-        /// </summary>
-        /// <param name="request"></param>
-        /// <returns></returns>
-        public static bool Delete(DeleteByQueryRequest<T> request)
-        {
-
-            var res = _es.DeleteByQuery(request);
-            return res.Deleted > 0;
-
-        }
-        /// <summary>
-        /// 搜索（需要自己构建request）
-        /// </summary>
-        /// <param name="request"></param>
-        /// <returns></returns>
-        public static List<T> Search(SearchRequest<T> request)
-        {
-
-            return _es.Search<T>(request).Documents.ToList();
-
-        }
         /// <summary>
         /// 使用sql语句查询(含分页)
         /// </summary>
@@ -571,69 +482,115 @@ namespace Common.Elasticsearch.Net
         /// </summary>
         /// <param name="fields"></param>
         /// <returns>{item1:must,item2:should}</returns>
-        public static ESConditionModel BuildQueryContainer(List<ESField> fields)
+        public static ESConditionModel BuildQueryContainer(List<ESField> fields, string analyzer)
         {
             List<QueryContainer> must = new List<QueryContainer>(),
                 should = new List<QueryContainer>(),
                 mustNot = new List<QueryContainer>();
-            ;
             if (fields != null && fields.Count > 0)
             {
-
                 foreach (var item in fields)
                 {
                     QueryContainer container = null;
-                    switch (item.QueryType)
+                    //1.数据类型辨析（暂时不做实现）
+                    if (item.DataType == ESDataType.GeoPoint)
                     {
-                        case ESQueryType.Match:
-                            container = new MatchQuery()
-                            {
-                                Field = item.Key,
-                                Query = item.Value.Item1.ToString(),
-
-
-                            };
-                            break;
-                        case ESQueryType.All:
-                            container = new MatchAllQuery()
-                            {
-                            };
-                            break;
-                        case ESQueryType.Term:
-                            container = new TermQuery()
-                            {
-                                Field = item.Key,
-                                Value = item.Value.Item1
-                            };
-                            break;
-                        case ESQueryType.Range:
-                            switch (item.DataType)
-                            {
-                                case ESDataType.Text:
-                                    break;
-                                case ESDataType.Number:
-                                    container = new NumericRangeQuery()
-                                    {
-                                        Field = item.Key,
-                                        GreaterThanOrEqualTo = Convert.ToDouble(item.Value.Item1),
-                                        LessThanOrEqualTo = Convert.ToDouble(item.Value.Item2),
-
-                                    };
-                                    break;
-                                case ESDataType.Date:
-                                    container = new DateRangeQuery()
-                                    {
-                                        Field = item.Key,
-                                        GreaterThanOrEqualTo = DateMath.FromString(item.Value.Item1.ToString()),
-                                        LessThanOrEqualTo = DateMath.FromString(item.Value.Item2.ToString())
-                                    };
-                                    break;
-
-                                default:
-                                    break;
-                            }
-                            break;
+                        //switch (item.QueryType)
+                        //{
+                        //    case ESQueryType.Geo_Distance:
+                        //        container = new GeoDistanceQuery()
+                        //        {
+                        //            Location = new GeoLocation(0.1, 0.2),
+                        //            Distance =new Distance(),
+                        //        };
+                        //        break;
+                        //    case ESQueryType.Geo_Polygon:
+                        //        container = new GeoPolygonQuery(){
+                        //         Points=,
+                        //    };
+                        //        break;
+                        //    case ESQueryType.Geo_Bounding_Box:
+                        //        container = new GeoBoundingBoxQuery()
+                        //        {
+                        //            BoundingBox = new BoundingBox()
+                        //            {
+                        //                BottomRight =,
+                        //                TopLeft =,
+                        //            }
+                        //        };
+                        //        break;
+                        //}
                     }
+                    else
+                    {
+                        switch (item.QueryType)
+                        {
+                            case ESQueryType.Match:
+                                container = new MatchQuery()
+                                {
+                                    Analyzer = analyzer,
+                                    Field = item.Key,
+                                    Query = item.Value.Item1.ToString(),
+                                };
+                                break;
+                            case ESQueryType.All:
+                                container = new MatchAllQuery()
+                                {
+
+                                };
+                                break;
+                            case ESQueryType.Match_Phrase:
+                                container = new MatchPhraseQuery()
+                                {
+                                    Field = item.Key,
+                                    Analyzer = analyzer,
+                                    Query = item.Value.Item1.ToString()
+                                };
+                                break;
+                            case ESQueryType.Match_Phrase_Prefix:
+                                container = new MatchPhrasePrefixQuery()
+                                {
+                                    Field = item.Key,
+                                    Analyzer = analyzer,
+                                    Query = item.Value.ToString()
+                                };
+                                break;
+                            case ESQueryType.Term:
+                                container = new TermQuery()
+                                {
+                                    Field = item.Key,
+                                    Value = item.Value.Item1
+                                };
+                                break;
+                            case ESQueryType.Range:
+                                switch (item.DataType)
+                                {
+                                    case ESDataType.Text:
+                                        break;
+                                    case ESDataType.Number:
+                                        container = new NumericRangeQuery()
+                                        {
+                                            Field = item.Key,
+                                            GreaterThanOrEqualTo = Convert.ToDouble(item.Value.Item1),
+                                            LessThanOrEqualTo = Convert.ToDouble(item.Value.Item2),
+                                        };
+                                        break;
+                                    case ESDataType.Date:
+                                        container = new DateRangeQuery()
+                                        {
+                                            Field = item.Key,
+                                            GreaterThanOrEqualTo = DateMath.FromString(item.Value.Item1.ToString()),
+                                            LessThanOrEqualTo = DateMath.FromString(item.Value.Item2.ToString())
+                                        };
+                                        break;
+
+                                    default:
+                                        break;
+                                }
+                                break;
+                        }
+                    }
+                    //2.条件类型解析
                     if (container != null)
                     {
                         switch (item.ConditionType)
@@ -652,8 +609,6 @@ namespace Common.Elasticsearch.Net
                         }
                     }
                 }
-
-
             }
 
             return new ESConditionModel()
@@ -701,24 +656,13 @@ namespace Common.Elasticsearch.Net
             return hightLight;
         }
         /// <summary>
-        ///     InitializeIndexMap
+        /// 构建高亮字符串
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="client"></param>
-        /// <param name="index"></param>
-        public static void InitializeIndexMap(string index)
-        {
-            var descriptor = new CreateIndexDescriptor(index)
-                .Mappings(ms => ms
-                    .Map<T>(m => m.AutoMap())
-                )
-                .Settings(s => s.NumberOfShards(5)
-                .NumberOfReplicas(1));
-            var response = _es.CreateIndex(descriptor);
-
-            if (!response.IsValid)
-                throw new Exception("新增Index:" + response.OriginalException.Message);
-        }
+        /// <param name="parentStr"></param>
+        /// <param name="childStr"></param>
+        /// <param name="preTag"></param>
+        /// <param name="postTag"></param>
+        /// <returns></returns>
         public static string BuildHightLightString(string parentStr, string childStr, string preTag, string postTag)
         {
             int equalsCount = 0;
@@ -742,21 +686,23 @@ namespace Common.Elasticsearch.Net
             }
             return result;
         }
-        #endregion
-
-        #region Util-- Index CURD
         /// <summary>
-        /// 索引是否存在
+        /// 构建分组key
         /// </summary>
-        /// <param name="indexName"></param>
+        /// <param name="groupBys"></param>
+        /// <param name="tag"></param>
         /// <returns></returns>
-        public static bool IndexExist(string indexName)
+        private static string BuildGroupKey(HashSet<string> groupBys, string tag)
         {
-            IndexExistsRequest request = new IndexExistsRequest(indexName);
-            var response = _es.IndexExists(request);
-            return response.Exists;
-        }
 
+            HashSet<string> set = new HashSet<string>();
+            foreach (var item in groupBys)
+            {
+                set.Add($"doc[{item}].values");
+            }
+            return string.Join($"+'{tag}'+", set);
+        }
+        
         #endregion
 
         #endregion
