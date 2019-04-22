@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Common.Elasticsearch.Net.Enum
+namespace JiuLiao.Common.Elasticsearch.Net.Enum
 {
     /// <summary>
     /// ES条件类别

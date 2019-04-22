@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Common.Elasticsearch.Net.Option
+namespace JiuLiao.Common.Elasticsearch.Net.Option
 {
     public class ESSqlSearchOption
     {

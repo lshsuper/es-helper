@@ -1,12 +1,12 @@
-﻿using Common.Elasticsearch.Net.Entity;
-using Common.Entity;
+﻿using JiuLiao.Common.Elasticsearch.Net.Entity;
+using JiuLiao.Common.Entity;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Common.Elasticsearch.Net.Option
+namespace JiuLiao.Common.Elasticsearch.Net.Option
 {
    public class ESUpdateOption:ESOption
     {
@@ -18,5 +18,6 @@ namespace Common.Elasticsearch.Net.Option
         /// 待修改数据
         /// </summary>
         public Dictionary<string,object> Model { get; set; }
+
     }
 }

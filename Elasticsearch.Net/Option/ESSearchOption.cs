@@ -6,19 +6,18 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Common.Elasticsearch.Net.Option
+namespace JiuLiao.Common.Elasticsearch.Net.Option
 {
 
     /// <summary>
     /// ES查询option
     /// </summary>
-    public class ESSearchOption : ESOption
+    public class ESSearchBaseOption : ESOption
     {
         /// <summary>
         /// 条件
         /// </summary>
         public List<ESField> Where { get; set; }
-
         /// <summary>
         /// 排序多个字段
         /// </summary>
@@ -68,6 +67,30 @@ namespace Common.Elasticsearch.Net.Option
         /// 高亮配置
         /// </summary>
         public ESHighLightConfig ESHighLightConfig { get; set; }
+      
+    }
 
+    public class ESSearchOption:ESSearchBaseOption
+    {
+
+    }
+
+    /// <summary>
+    /// 分组查询参数
+    /// </summary>
+    public class ESSearchWithGroupOption : ESSearchBaseOption
+    {
+        /// <summary>
+        /// 分组字段
+        /// </summary>
+        public HashSet<string> GroupBys { get; set; }
+        /// <summary>
+        /// 分组字段标签分隔符
+        /// </summary>
+        public string SplitTagForGroupBys { get; set; }
+        /// <summary>
+        /// 获取哪些字段
+        /// </summary>
+        public HashSet<string> Fields { get; set; }
     }
 }

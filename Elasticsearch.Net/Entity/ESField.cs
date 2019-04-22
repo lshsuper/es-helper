@@ -5,8 +5,11 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Common.Elasticsearch.Net.Entity
+namespace JiuLiao.Common.Elasticsearch.Net.Entity
 {
+    /// <summary>
+    /// 自定义ES查询条件字段
+    /// </summary>
     public class ESField
     {
 

@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Common.Elasticsearch.Net.Enum
+namespace JiuLiao.Common.Elasticsearch.Net.Enum
 {
     /// <summary>
     /// ES数据分类
@@ -26,6 +26,10 @@ namespace Common.Elasticsearch.Net.Enum
         /// <summary>
         /// 关键词类型
         /// </summary>
-        Keyword = 3
+        Keyword = 3,
+        /// <summary>
+        /// geo point
+        /// </summary>
+        GeoPoint=4
     }
 }

@@ -6,15 +6,16 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using Elasticsearch.Net;
-using Common;
-using Common.Elasticsearch.Net.Entity;
-using Common.Elasticsearch.Net.Enum;
-using Common.Elasticsearch.Net.Option;
-using Common.Entity;
+using JiuLiao.Common;
+using JiuLiao.Common.Elasticsearch.Net.Entity;
+using JiuLiao.Common.Elasticsearch.Net.Enum;
+using JiuLiao.Common.Elasticsearch.Net.Option;
+using JiuLiao.Common.Entity;
 using Nest;
+using Newtonsoft.Json.Linq;
 using static System.Net.Mime.MediaTypeNames;
 
-namespace Common.Elasticsearch.Net
+namespace JiuLiao.Common.Elasticsearch.Net
 {
     /// <summary>
     /// 说明：
@@ -109,10 +110,10 @@ namespace Common.Elasticsearch.Net
                         List<string> keys = currentSource.Keys.ToList();
                         foreach (var key in keys)
                         {
-                            KeyValuePair<string, HighlightHit> currentMatch = currentHightList.FirstOrDefault(o => o.Key.ToLower()== key.ToLower());
+                            KeyValuePair<string, HighlightHit> currentMatch = currentHightList.FirstOrDefault(o => o.Key.ToLower() == key.ToLower());
                             if (currentMatch.Key != null)
                             {
-                                
+
                                 currentSource[key] = currentMatch.Value.Highlights.First();
                             }
                         }
@@ -297,10 +298,40 @@ namespace Common.Elasticsearch.Net
             if (response.IsValid)
             {
                 result.UniqueId = response.Id;
+                result.IndexName = response.Index;
+                result.TypeName = response.Type;
+                result.Data = response.Source;
             }
             return result;
 
 
+        }
+        /// <summary>
+        /// 返回多条(by id)
+        /// </summary>
+        /// <param name="indexName"></param>
+        /// <param name="typeName"></param>
+        /// <param name="ids"></param>
+        /// <returns></returns>
+        public static List<ESModel<T>> FindMany(string indexName, string typeName, List<string> ids)
+        {
+
+            var result = new List<ESModel<T>>();
+            var response = GetInstance.GetMany<T>(ids, indexName, typeName);
+            if (response != null)
+            {
+                response.ToList().ForEach(ele =>
+                {
+                    result.Add(new ESModel<T>()
+                    {
+                        UniqueId = ele.Id,
+                        Data = ele.Source,
+                        IndexName = ele.Index,
+                        TypeName = ele.Type,
+                    });
+                });
+            }
+            return result;
         }
         /// <summary>
         /// 热门词汇列表（{“分组值”，“当前文档的数量”}）
@@ -702,7 +733,7 @@ namespace Common.Elasticsearch.Net
             }
             return string.Join($"+'{tag}'+", set);
         }
-        
+
         #endregion
 
         #endregion

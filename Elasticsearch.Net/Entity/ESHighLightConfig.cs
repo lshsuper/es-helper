@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Common.Elasticsearch.Net.Entity
+namespace JiuLiao.Common.Elasticsearch.Net.Entity
 {
     /// <summary>
     /// 高亮配置
