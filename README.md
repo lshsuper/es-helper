@@ -1,5 +1,4 @@
-# es-helper
-**基于NEST封装**
+# es-helper(基于NEST封装)
 ## [支持SQl查询/删除]
 1. 环境需求：需要安装elasticsearch-sql插件
 2. github下载地址：https://github.com/NLPchina/elasticsearch-sql
